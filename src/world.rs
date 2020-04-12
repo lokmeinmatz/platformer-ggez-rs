@@ -1,5 +1,5 @@
 use crate::physics::RigidBody;
-use crate::{DebugDrawable, Shared, SharedWeak, shared};
+use crate::{shared, DebugDrawable, Shared, SharedWeak};
 use ggez::graphics::{Color, DrawMode, DrawParam, Image, Mesh, Rect};
 use ggez::{Context, GameError, GameResult};
 use std::collections::HashMap;
@@ -92,7 +92,7 @@ impl Cell {
     pub const fn empty() -> Cell {
         Cell {
             cell_type: CellType::Empty,
-            rb: None
+            rb: None,
         }
     }
 
@@ -115,13 +115,10 @@ struct Chunk {
 
 impl Chunk {
     pub fn new(x: isize, y: isize) -> Chunk {
-
-
         // needed because Cell cant implement copy because of the rb reference
         // this is valid because Cell::empty() is just static data
-        let mut unsafe_cells : [MaybeUninit<Cell>; (CHUNK_SIZE * CHUNK_SIZE) as usize] = unsafe {
-          MaybeUninit::uninit().assume_init()
-        };
+        let mut unsafe_cells: [MaybeUninit<Cell>; (CHUNK_SIZE * CHUNK_SIZE) as usize] =
+            unsafe { MaybeUninit::uninit().assume_init() };
 
         for cell in unsafe_cells.iter_mut() {
             *cell = MaybeUninit::new(Cell::empty());
@@ -232,8 +229,11 @@ impl Chunk {
         match cell_type {
             CellType::Empty => None,
             _ => {
-                let rb = shared(RigidBody::new((x as f32, y as f32).into(), (1.0, 1.0).into(),
-                                               None));
+                let rb = shared(RigidBody::new(
+                    (x as f32, y as f32).into(),
+                    (1.0, 1.0).into(),
+                    None,
+                ));
                 let ret = Some(Shared::downgrade(&rb));
                 cell.rb = Some(rb);
                 ret

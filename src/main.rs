@@ -11,8 +11,8 @@ use cgmath::{EuclideanSpace, Point2};
 
 mod physics;
 mod player;
-mod world;
 mod utils;
+mod world;
 
 fn main() {
     let resource_dir = if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -67,10 +67,10 @@ trait DebugDrawable {
     }
 }
 
-use std::cell::RefCell;
-use std::rc::{Rc, Weak};
 use crate::physics::RigidBody;
 use crate::world::CellType;
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 
 pub type Shared<T> = Rc<RefCell<T>>;
 pub type SharedWeak<T> = Weak<RefCell<T>>;
@@ -79,13 +79,13 @@ pub fn shared<T>(inner: T) -> Shared<T> {
     Rc::new(RefCell::new(inner))
 }
 
-
 pub struct Game {
     tiles: Shared<world::Tilemap>,
     cam: Cam,
     players: Vec<Shared<Player>>,
     rigidbodies: Vec<SharedWeak<RigidBody>>,
     debug_drawables: Vec<SharedWeak<dyn DebugDrawable>>,
+    frame_debug_drawables: Vec<Box<dyn DebugDrawable>>
 }
 
 impl Game {
@@ -98,6 +98,7 @@ impl Game {
             players: vec![],
             rigidbodies: rbs,
             debug_drawables: vec![],
+            frame_debug_drawables: vec![]
         };
 
         // generate boxes
@@ -116,18 +117,12 @@ impl Game {
         game
     }
 
-
-
     fn init_player(&mut self, ctx: &mut Context, pos: cgmath::Point2<f32>) -> GameResult<()> {
-        let player = Rc::new(
-            RefCell::new(Player::create(ctx, pos, 0)?
-            )
-        );
+        let player = Rc::new(RefCell::new(Player::create(ctx, pos, 0)?));
 
         self.rigidbodies.push(Rc::downgrade(&player.borrow().rb));
 
-        self.debug_drawables
-            .push(Rc::downgrade(&player) as _);
+        self.debug_drawables.push(Rc::downgrade(&player) as _);
         self.players.push(player);
 
         Ok(())
@@ -140,6 +135,9 @@ impl Game {
 
 impl EventHandler for Game {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
+
+        let delta = ggez::timer::delta(ctx).as_secs_f32();
+
         // Update code here...
         if ggez::timer::ticks(ctx) % 100 == 0 {
             println!("fps: {}", ggez::timer::fps(ctx));
@@ -147,8 +145,15 @@ impl EventHandler for Game {
             println!("chunks in storage: {}", self.tiles.borrow().chunks_stored());
         }
 
+        let player_move: cgmath::Vector2<f32> = if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::A) {
+            (-1.0, 0.0).into()
+        } else if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::D) {
+            (1.0, 0.0).into()
+        } else { (0., 0.).into() };
 
-        physics::step_rb_sim(&mut self.rigidbodies, ggez::timer::delta(ctx).as_secs_f32());
+        *self.players[0].borrow_mut().rb.borrow_mut().velocity_mut() += player_move * delta * 10.;
+
+        physics::step_rb_sim(&mut self.rigidbodies, delta, &mut self.frame_debug_drawables);
 
         Ok(())
     }
@@ -176,12 +181,15 @@ impl EventHandler for Game {
 
         self.tiles.borrow_mut().draw(ctx)?;
 
-
         // draw debug drawables
         for weak_drawable in &mut self.debug_drawables {
             if let Some(debug_draw) = weak_drawable.upgrade() {
                 debug_draw.borrow_mut().debug_draw_worldspace(ctx)?;
             }
+        }
+
+        for mut frame_drawable in self.frame_debug_drawables.drain(..) {
+            frame_drawable.debug_draw_worldspace(ctx)?;
         }
 
         graphics::origin(ctx);
@@ -190,6 +198,10 @@ impl EventHandler for Game {
 
     fn key_down_event(&mut self, ctx: &mut Context, key: KeyCode, mods: KeyMods, _: bool) {
         //self.ui.update_search(key, self);
+        match key {
+            KeyCode::W => self.players[0].borrow_mut().jump(12.0),
+            _ => {}
+        }
     }
 
     fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32, _dx: f32, _dy: f32) {
