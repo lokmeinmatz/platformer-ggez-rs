@@ -1,5 +1,8 @@
-use crate::physics::RigidBody;
-use crate::{shared, DebugDrawable, Shared, SharedWeak};
+use crate::{
+    DebugDrawable,
+    utils::*,
+    physics::RigidBody
+};
 use ggez::graphics::{Color, DrawMode, DrawParam, Image, Mesh, Rect};
 use ggez::{Context, GameError, GameResult};
 use std::collections::HashMap;
@@ -230,8 +233,8 @@ impl Chunk {
             CellType::Empty => None,
             _ => {
                 let rb = shared(RigidBody::new(
-                    (x as f32, y as f32).into(),
-                    (1.0, 1.0).into(),
+                    (x as f32 - 0.05, y as f32 - 0.05).into(),
+                    (1.1, 1.1).into(),
                     None,
                 ));
                 let ret = Some(Shared::downgrade(&rb));

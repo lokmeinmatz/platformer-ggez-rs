@@ -10,3 +10,4 @@ edition = "2018"
 ggez = "0.5"
 cgmath = {version = "0.17.0", features = ["mint"]}
 itertools = "0.9.0"
+async-std = "1.5.0"

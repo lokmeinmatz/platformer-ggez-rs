@@ -1,6 +1,7 @@
 #![feature(assoc_int_consts)]
+#![feature(new_uninit)]
 
-use ggez::conf::WindowMode;
+use ggez::conf::{WindowMode, WindowSetup};
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics;
 use ggez::graphics::{DrawParam, Image};
@@ -13,6 +14,14 @@ mod physics;
 mod player;
 mod utils;
 mod world;
+mod server;
+mod game;
+mod cam;
+mod networking;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub static SHOULD_TERMINATE: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     let resource_dir = if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -23,9 +32,12 @@ fn main() {
         std::path::PathBuf::from("./resources")
     };
 
+    let server_handle = std::thread::spawn(server::start);
+
     // Make a Context and an EventLoop.
     let (mut ctx, mut event_loop) = ContextBuilder::new("Game", "lokmeinmatz")
         .add_resource_path(resource_dir)
+        .window_setup(WindowSetup::default().vsync(true))
         .window_mode(WindowMode::default().dimensions(1200.0, 900.0))
         .build()
         .unwrap();
@@ -33,190 +45,24 @@ fn main() {
     // Create an instance of your event handler.
     // Usually, you should provide it with the Context object
     // so it can load resources like images during setup.
-    let mut my_game = Game::new(&mut ctx);
+    let mut my_game = game::Game::new(&mut ctx);
 
     // Run!
     match event::run(&mut ctx, &mut event_loop, &mut my_game) {
         Ok(_) => println!("Exited cleanly."),
         Err(e) => println!("Error occured: {}", e),
     }
+
+    SHOULD_TERMINATE.store(true, Ordering::Relaxed);
+    server_handle.join();
 }
 
-pub struct Cam {
-    center: cgmath::Point2<f32>,
-    last_mouse_pos: cgmath::Point2<f32>,
-    zoom: f32,
-}
 
-impl Cam {
-    pub fn new() -> Self {
-        Cam {
-            center: (0.0, 0.0).into(),
-            last_mouse_pos: (0.0, 0.0).into(),
-            zoom: 30.0,
-        }
-    }
-}
-
-trait DebugDrawable {
+pub trait DebugDrawable {
     fn debug_draw_screenspace(&mut self, ctx: &mut Context) -> GameResult<()> {
         Ok(())
     }
     fn debug_draw_worldspace(&mut self, ctx: &mut Context) -> GameResult<()> {
         Ok(())
-    }
-}
-
-use crate::physics::RigidBody;
-use crate::world::CellType;
-use std::cell::RefCell;
-use std::rc::{Rc, Weak};
-
-pub type Shared<T> = Rc<RefCell<T>>;
-pub type SharedWeak<T> = Weak<RefCell<T>>;
-
-pub fn shared<T>(inner: T) -> Shared<T> {
-    Rc::new(RefCell::new(inner))
-}
-
-pub struct Game {
-    tiles: Shared<world::Tilemap>,
-    cam: Cam,
-    players: Vec<Shared<Player>>,
-    rigidbodies: Vec<SharedWeak<RigidBody>>,
-    debug_drawables: Vec<SharedWeak<dyn DebugDrawable>>,
-    frame_debug_drawables: Vec<Box<dyn DebugDrawable>>
-}
-
-impl Game {
-    pub fn new(ctx: &mut Context) -> Game {
-        let tile_tex = Image::new(ctx, "/tiles.png").expect("No texture for tiles found");
-        let mut rbs = vec![];
-        let mut game = Game {
-            tiles: shared(world::Tilemap::new(tile_tex, &mut rbs)),
-            cam: Cam::new(),
-            players: vec![],
-            rigidbodies: rbs,
-            debug_drawables: vec![],
-            frame_debug_drawables: vec![]
-        };
-
-        // generate boxes
-        for y in 8..=10 {
-            for x in 12..20 {
-                let tile_rb = game.tiles.borrow_mut().set_cell(x, y, CellType::Stone);
-                if let Some(rb) = tile_rb {
-                    game.rigidbodies.push(rb);
-                }
-            }
-        }
-
-        game.debug_drawables.push(Rc::downgrade(&game.tiles) as _);
-        game.init_player(ctx, Point2::new(15.0, 1.0));
-
-        game
-    }
-
-    fn init_player(&mut self, ctx: &mut Context, pos: cgmath::Point2<f32>) -> GameResult<()> {
-        let player = Rc::new(RefCell::new(Player::create(ctx, pos, 0)?));
-
-        self.rigidbodies.push(Rc::downgrade(&player.borrow().rb));
-
-        self.debug_drawables.push(Rc::downgrade(&player) as _);
-        self.players.push(player);
-
-        Ok(())
-    }
-
-    pub fn screen_to_world(&self, screen_pos: cgmath::Point2<f32>) -> cgmath::Point2<f32> {
-        unimplemented!()
-    }
-}
-
-impl EventHandler for Game {
-    fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-
-        let delta = ggez::timer::delta(ctx).as_secs_f32();
-
-        // Update code here...
-        if ggez::timer::ticks(ctx) % 100 == 0 {
-            println!("fps: {}", ggez::timer::fps(ctx));
-
-            println!("chunks in storage: {}", self.tiles.borrow().chunks_stored());
-        }
-
-        let player_move: cgmath::Vector2<f32> = if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::A) {
-            (-1.0, 0.0).into()
-        } else if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::D) {
-            (1.0, 0.0).into()
-        } else { (0., 0.).into() };
-
-        *self.players[0].borrow_mut().rb.borrow_mut().velocity_mut() += player_move * delta * 10.;
-
-        physics::step_rb_sim(&mut self.rigidbodies, delta, &mut self.frame_debug_drawables);
-
-        Ok(())
-    }
-
-    fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::BLACK);
-        let t_start = ggez::timer::time_since_start(ctx).as_secs_f32();
-        //let scale = ( t_start.sin() + 6.0 ) * 8.0;
-        let scale = self.cam.zoom;
-
-        let viewport_size: cgmath::Vector2<f32> = ggez::graphics::drawable_size(ctx).into();
-        let scaled_viewport_size =
-            cgmath::Vector2::new(viewport_size.x / scale, viewport_size.y / scale);
-
-        let param_scale = DrawParam::default()
-            //.offset(cgmath::Point2::new(0.5, 0.5))
-            .scale(cgmath::Vector2::new(scale, scale));
-        let param_translate = DrawParam::default().dest(self.cam.center);
-        let param_center = DrawParam::default().dest(cgmath::Point2::from_vec(viewport_size) / 2.0);
-        graphics::set_transform(ctx, param_center.to_matrix());
-        graphics::mul_transform(ctx, param_scale.to_matrix());
-        graphics::mul_transform(ctx, param_translate.to_matrix());
-        //graphics::set_transform(ctx, param.to_matrix());
-        graphics::apply_transformations(ctx);
-
-        self.tiles.borrow_mut().draw(ctx)?;
-
-        // draw debug drawables
-        for weak_drawable in &mut self.debug_drawables {
-            if let Some(debug_draw) = weak_drawable.upgrade() {
-                debug_draw.borrow_mut().debug_draw_worldspace(ctx)?;
-            }
-        }
-
-        for mut frame_drawable in self.frame_debug_drawables.drain(..) {
-            frame_drawable.debug_draw_worldspace(ctx)?;
-        }
-
-        graphics::origin(ctx);
-        graphics::present(ctx)
-    }
-
-    fn key_down_event(&mut self, ctx: &mut Context, key: KeyCode, mods: KeyMods, _: bool) {
-        //self.ui.update_search(key, self);
-        match key {
-            KeyCode::W => self.players[0].borrow_mut().jump(12.0),
-            _ => {}
-        }
-    }
-
-    fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32, _dx: f32, _dy: f32) {
-        let dx = x - self.cam.last_mouse_pos.x;
-        let dy = y - self.cam.last_mouse_pos.y;
-
-        if ggez::input::mouse::button_pressed(ctx, MouseButton::Left) {
-            self.cam.center += cgmath::Vector2::new(dx, dy) / self.cam.zoom;
-        }
-
-        self.cam.last_mouse_pos.x = x;
-        self.cam.last_mouse_pos.y = y;
-    }
-
-    fn mouse_wheel_event(&mut self, _ctx: &mut Context, _x: f32, y: f32) {
-        self.cam.zoom = (self.cam.zoom + y).max(4.0);
     }
 }

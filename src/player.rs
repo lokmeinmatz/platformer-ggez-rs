@@ -2,9 +2,10 @@ use crate::physics::RigidBody;
 use crate::DebugDrawable;
 use cgmath::Vector2;
 use ggez::graphics::{Color, DrawMode, DrawParam, Mesh};
-use ggez::{Context, GameResult};
+use ggez::{Context, GameResult, GameError};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::borrow::Borrow;
 
 pub struct Player {
     pub rb: Rc<RefCell<RigidBody>>,
@@ -15,7 +16,6 @@ pub struct Player {
 const RED: Color = Color::new(1.0, 0.0, 0.0, 1.0);
 const GREEN: Color = Color::new(0.0, 1.0, 0.0, 1.0);
 const BLUE: Color = Color::new(0.0, 0.0, 1.0, 1.0);
-
 impl Player {
 
     pub fn jump(&mut self, power: f32) {
@@ -43,11 +43,19 @@ impl Player {
 }
 
 impl DebugDrawable for Player {
+    fn debug_draw_screenspace(&mut self, ctx: &mut Context) -> GameResult<()> {
+
+    }
+
     fn debug_draw_worldspace(&mut self, ctx: &mut Context) -> GameResult<()> {
-        let rb = self.rb.borrow();
+        let rb = (*self.rb).borrow();
         let bbox =
             Mesh::new_rectangle(ctx, DrawMode::stroke(0.1), rb.get_dimensions_rect(), GREEN)?;
-
-        ggez::graphics::draw(ctx, &bbox, DrawParam::default().dest(rb.get_top_left()))
+        let a = (*self.rb).borrow().id().to_string();
+        let debug_text = ggez::graphics::Text::new(a);
+        ggez::graphics::draw(ctx, &bbox, DrawParam::default().dest(rb.get_top_left()))?;
+        ggez::graphics::draw(ctx, &debug_text, DrawParam::default().dest(rb.get_top_left()))
     }
+
+
 }

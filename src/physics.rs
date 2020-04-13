@@ -1,4 +1,5 @@
-use crate::{SharedWeak, DebugDrawable};
+use crate::DebugDrawable;
+use crate::utils::SharedWeak;
 use cgmath::{InnerSpace, Point2, Vector2};
 use ggez::graphics::{Rect, Color, DrawParam};
 use itertools::Itertools;
@@ -62,8 +63,12 @@ pub fn step_rb_sim(rbs: &mut Vec<SharedWeak<RigidBody>>, delta_time: f32, frame_
     std::mem::replace(rbs, upgraded);
 }
 
+use std::sync::atomic::{AtomicU64, Ordering};
+static NEXT_RB_ID: AtomicU64 = AtomicU64::new(0);
+
 #[derive(Debug)]
 pub struct RigidBody {
+    id: u64,
     top_left: Point2<f32>,
     dimensions: Vector2<f32>,
     velocity: Vector2<f32>,
@@ -81,6 +86,10 @@ pub enum Axis {
 impl RigidBody {
     pub fn velocity_mut(&mut self) -> &mut Vector2<f32> {
         &mut self.velocity
+    }
+
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     pub fn get_collision_displacement(
@@ -162,6 +171,7 @@ impl RigidBody {
 
     pub fn new(top_left: Point2<f32>, dimensions: Vector2<f32>, weight: Option<f32>) -> Self {
         RigidBody {
+            id: NEXT_RB_ID.fetch_add(1, Ordering::SeqCst),
             top_left,
             dimensions,
             velocity: Vector2::new(0.0, 0.0),
