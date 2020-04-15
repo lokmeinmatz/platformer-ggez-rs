@@ -20,6 +20,7 @@ mod cam;
 mod networking;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use crate::game::Game;
 
 pub static SHOULD_TERMINATE: AtomicBool = AtomicBool::new(false);
 
@@ -59,10 +60,10 @@ fn main() {
 
 
 pub trait DebugDrawable {
-    fn debug_draw_screenspace(&mut self, ctx: &mut Context) -> GameResult<()> {
+    fn debug_draw_screenspace(&mut self, ctx: &mut Context, game: &Game) -> GameResult<()> {
         Ok(())
     }
-    fn debug_draw_worldspace(&mut self, ctx: &mut Context) -> GameResult<()> {
+    fn debug_draw_worldspace(&mut self, ctx: &mut Context, game: &Game) -> GameResult<()> {
         Ok(())
     }
 }

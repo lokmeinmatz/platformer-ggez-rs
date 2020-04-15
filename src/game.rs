@@ -29,7 +29,7 @@ use std::rc::Rc;
 
 pub struct Game {
     tiles: Shared<Tilemap>,
-    cam: Cam,
+    pub cam: Cam,
     players: Vec<Shared<Player>>,
     rigidbodies: Vec<SharedWeak<RigidBody>>,
     debug_drawables: Vec<SharedWeak<dyn DebugDrawable>>,
@@ -42,7 +42,7 @@ impl Game {
         let mut rbs = vec![];
         let mut game = Game {
             tiles: shared(Tilemap::new(tile_tex, &mut rbs)),
-            cam: Cam::new(),
+            cam: Cam::new(ggez::graphics::drawable_size(ctx).into()),
             players: vec![],
             rigidbodies: rbs,
             debug_drawables: vec![],
@@ -126,7 +126,7 @@ impl EventHandler for Game {
         let param_scale = DrawParam::default()
             //.offset(cgmath::Point2::new(0.5, 0.5))
             .scale(cgmath::Vector2::new(scale, scale));
-        let param_translate = DrawParam::default().dest(self.cam.center);
+        let param_translate = DrawParam::default().dest(self.cam.center * -1.);
         let param_center = DrawParam::default().dest(cgmath::Point2::from_vec(viewport_size) / 2.0);
         graphics::set_transform(ctx, param_center.to_matrix());
         graphics::mul_transform(ctx, param_scale.to_matrix());
@@ -137,17 +137,33 @@ impl EventHandler for Game {
         self.tiles.borrow_mut().draw(ctx)?;
 
         // draw debug drawables
-        for weak_drawable in &mut self.debug_drawables {
+        for weak_drawable in &self.debug_drawables {
             if let Some(debug_draw) = weak_drawable.upgrade() {
-                debug_draw.borrow_mut().debug_draw_worldspace(ctx)?;
+                debug_draw.borrow_mut().debug_draw_worldspace(ctx, self)?;
             }
         }
 
-        for mut frame_drawable in self.frame_debug_drawables.drain(..) {
-            frame_drawable.debug_draw_worldspace(ctx)?;
+        let mut frame_debug_drawables = vec![];
+        std::mem::swap(&mut frame_debug_drawables, &mut self.frame_debug_drawables);
+
+        for mut frame_drawable in &mut frame_debug_drawables {
+            frame_drawable.debug_draw_worldspace(ctx, &self)?;
         }
 
         graphics::origin(ctx);
+
+        // draw screeen space debug
+        for weak_drawable in &self.debug_drawables {
+            if let Some(debug_draw) = weak_drawable.upgrade() {
+                debug_draw.borrow_mut().debug_draw_screenspace(ctx, self)?;
+            }
+        }
+
+        for mut frame_drawable in &mut frame_debug_drawables {
+            frame_drawable.debug_draw_screenspace(ctx, &self)?;
+        }
+
+
         graphics::present(ctx)
     }
 
@@ -164,8 +180,10 @@ impl EventHandler for Game {
         let dy = y - self.cam.last_mouse_pos.y;
 
         if ggez::input::mouse::button_pressed(ctx, MouseButton::Left) {
-            self.cam.center += cgmath::Vector2::new(dx, dy) / self.cam.zoom;
+            self.cam.center -= cgmath::Vector2::new(dx, dy) / self.cam.zoom;
         }
+
+        //println!("{:?}", self.cam.center);
 
         self.cam.last_mouse_pos.x = x;
         self.cam.last_mouse_pos.y = y;

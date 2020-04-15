@@ -14,7 +14,7 @@ struct CollisionDebugDraw {
 }
 
 impl DebugDrawable for CollisionDebugDraw {
-    fn debug_draw_worldspace(&mut self, ctx: &mut Context) -> GameResult<()> {
+    fn debug_draw_worldspace(&mut self, ctx: &mut Context, game: &Game) -> GameResult<()> {
         let arrow = ggez::graphics::Mesh::new_line(
             ctx,
             &[self.world_pos, self.world_pos + self.displacement],
@@ -64,6 +64,8 @@ pub fn step_rb_sim(rbs: &mut Vec<SharedWeak<RigidBody>>, delta_time: f32, frame_
 }
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use crate::game::Game;
+
 static NEXT_RB_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]

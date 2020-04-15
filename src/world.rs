@@ -7,6 +7,7 @@ use ggez::graphics::{Color, DrawMode, DrawParam, Image, Mesh, Rect};
 use ggez::{Context, GameError, GameResult};
 use std::collections::HashMap;
 use std::mem::MaybeUninit;
+use crate::game::Game;
 
 pub struct Tilemap {
     /// Maps the "chunk coords (world coords / chunk size)
@@ -55,7 +56,7 @@ impl Tilemap {
 }
 
 impl DebugDrawable for Tilemap {
-    fn debug_draw_worldspace(&mut self, ctx: &mut Context) -> GameResult<()> {
+    fn debug_draw_worldspace(&mut self, ctx: &mut Context, game: &Game) -> GameResult<()> {
         let chunk_box = ggez::graphics::Mesh::new_rectangle(
             ctx,
             DrawMode::stroke(0.1),
